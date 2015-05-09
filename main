@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# -*- coding = utf-8 -*-
+import os
+import re
+import socket
+#import the module
+import weather
+import tinyurl
+import cal
+import rup
+import help_f
+import chkword
+import log 
+#open config file
+dir=os.getcwd()
+config=open('{}/config'.format(dir))
+#read config,channel and key
+read=config.readlines()
+chan=re.search("CHAN='(#\w+)'",read[0]).group(1)
+key=re.search("CHAN_KEY='(\w+)'",read[1]).group(1)
+#new a socket object and connect to IRC
+bot=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+bot.connect(('chat.freenode.net',6667))
+#Send User Info to the server
+bot.send('USER IRC_Bot 0 * :IRC_Bot\r\n'.encode()) #look the IRC protocol 
+bot.send('NICK IRC_Bot\r\n'.encode()) #Send Nick
+bot.send('JOIN {} {}\r\n'.format(chan,key).encode())
+bot.send(b'PRIVMSG ' + chan.encode() + " :``Hi, I'm u0216007, I'm written in Python.``\r\n".encode())
+bot.send('NICK u0216007\r\n'.encode()) #Send Nick
+#While the Connection is active
+while True:
+    data = bot.recv (4096) #Make Data the Receive Buffer
+    #send back PONG for not to be dropped
+    if data.find(b'PING') != -1:
+       bot.send('PONG\r\n'.encode()) 
+    #welcome message for new join user
+    if data.find(b'JOIN') !=-1:   
+        name=re.search(b':(.*)!',data).group(1).decode()
+        if (name!=None) and (name!="IRC_Bot"):
+            bot.send('PRIVMSG {} :Good day {}\r\n'.format(chan,name).encode())
+            bot.send('PRIVMSG {} :{}:Type "help" for more info about me!\r\n'.format(chan,name).encode())
+    #in case for the failure of data analysis
+    try:
+        #get user and content
+        ana=re.search(':([\w]*)!(.*) ([A-Z]*) (#.*) :(.*)',data.decode())
+    except:
+        continue
+    if ana != None:
+        user=ana.group(1)
+        cont=ana.group(5)
+        #just for debug
+        print("{} say {}".format(ana.group(1),ana.group(5)))
+        #detect and call "help" function
+        if cont.find('help')!=-1:
+           help_f.tip(chan,bot) 
+        #detect and call "weather" function
+        if cont.find('@weather') != -1:
+            w=weather.wea()
+            t=weather.tem()
+            bot.send('PRIVMSG {} :{}    {}\r\n'.format(chan,w,t).encode())
+        #detect and call "cal" function
+        if re.search('^@cal',cont) != None:
+            if re.search('^@cal (.*)',cont) != None:
+               exp=re.search('@cal (.*)',cont).group(1)
+            else:
+               exp="error"
+            ans=cal.cal(exp)
+            bot.send('PRIVMSG {} :{}: {}\r\n'.format(chan,user,ans).encode())
+        #detect and call "rup" function
+        if re.search("^@rup",cont) != None:
+            try:
+                get=re.search("@rup (.*)",cont).group(1).strip("\r")
+            except AttributeError:
+                rup_res="Usage: @rup host [host ...]" 
+                bot.send('PRIVMSG {} :{}\r\n'.format(chan,rup_res).encode())
+                continue
+            para=get.split()
+            for host in para:
+                rup_res=rup.rup(host)
+                bot.send('PRIVMSG {} :{}\r\n'.format(chan,rup_res).encode())
+        #detect and call "log"
+        if re.search("^@log",cont)!=None:   #@log -n 5 -u
+            #try:
+                u=False
+                if "-u" in cont: u=True
+                if "-n" in cont:
+                    t=re.search("-n +([\d]+)",cont).group(1)
+                    log.parse(bot,chan,int(t),u)
+                else: log.parse(bot,chan,5,u)
+            #except:
+                #bot.send('PRIVMSG {} :{}\r\n'.format(chan,"Usage: @log [-n num] [-u]")
+#.encode())
+                continue
+        #detect and call "tinyurl"
+        if re.search("https?://",cont)!=None:
+            if re.search("https?://tinyurl.com",cont)!=None:
+                pass
+            else:
+                url=re.search("(https?://[A-Za-z0-9\.~/\-!\*';:\(\)\[\]@&+=\?%#,\$]*)",cont)
+                turl=tinyurl.create(url.group(1))
+                bot.send('PRIVMSG {} :{}:{}\r\n'.format(chan,user,turl).encode())
+        #word matching
+        chkword.check(bot,chan,user,cont)
